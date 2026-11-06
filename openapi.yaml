@@ -1,0 +1,480 @@
+openapi: 3.0.3
+
+info:
+  title: API Pokédex
+  description: |
+    Serveur API REST **NodeJS + Express** fournissant les données du Pokédex
+    (809 pokemons, ids de 1 à 809).
+
+    Deux serveurs, un fichier par TP :
+
+    | Fichier | TP | Port | Contenu |
+    |---|---|---|---|
+    | `index.js` | TP - 02 | 5001 | Routes REST + fichiers statiques |
+    | `index-v2.js` | TP - 02.Bis | 5002 | Idem + limitation du nombre de requêtes par IP |
+
+    Toutes les routes de l'API sont préfixées par `/api/v1`.
+    Les fichiers statiques (`/images`, `/sprites`, `/thumbnails`) ne sont pas préfixés
+    et ne sont pas concernés par la limitation des requêtes.
+  version: 1.0.0
+  contact:
+    name: JadAwa00 - BTS SIO SLAM2
+    url: https://github.com/JadAwa00/TP-Pokedex
+  license:
+    name: Projet pédagogique BTS SIO SLAM2
+
+servers:
+  - url: http://127.0.0.1:5001
+    description: TP - 02 - Serveur API (index.js) - sans limitation de requêtes
+  - url: http://127.0.0.1:5002
+    description: TP - 02.Bis - Serveur API v2 (index-v2.js) - limitation de 10 requêtes par IP et par minute
+
+tags:
+  - name: Pokemons
+    description: Routes de consultation du pokedex (préfixe /api/v1)
+  - name: Fichiers statiques
+    description: Images, sprites et vignettes servies depuis le dossier FILES
+  - name: Divers
+    description: Routes d'aide au débogage
+
+paths:
+  /pokemons:
+    get:
+      tags:
+        - Pokemons
+      summary: Lire tous les pokemons
+      description: Renvoie l'intégralité du contenu du pokedex (809 pokemons).
+      operationId: findAll
+      responses:
+        '200':
+          description: Liste complète des pokemons
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pokemon'
+              example:
+                - id: 1
+                  name:
+                    english: Bulbasaur
+                    japanese: フシギダネ
+                    chinese: 妙蛙种子
+                    french: Bulbizarre
+                  type:
+                    - Grass
+                    - Poison
+                  base:
+                    HP: 45
+                    Attack: 49
+                    Defense: 49
+                    Sp. Attack: 65
+                    Sp. Defense: 65
+                    Speed: 45
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+
+  /pokemons/random:
+    get:
+      tags:
+        - Pokemons
+      summary: Lire un pokemon au hasard
+      description: |
+        Tire un id au hasard entre l'id minimum et l'id maximum du pokedex,
+        puis renvoie le pokemon correspondant (un autre est pris au hasard
+        si cet id n'existe pas).
+      operationId: findOneByRandom
+      responses:
+        '200':
+          description: Un pokemon choisi au hasard
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pokemon'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /pokemons/{id}:
+    get:
+      tags:
+        - Pokemons
+      summary: Lire un pokemon par son id
+      description: |
+        Renvoie UN pokemon à partir de son identifiant numérique (1 à 809).
+        Si non trouvé, renvoie **404**.
+
+        Cette route correspond au chemin réel du serveur `/api/v1/pokemons/:idOrName` :
+        si la valeur saisie est un nombre, c'est `findOneById` qui est appelé.
+      operationId: findOneById
+      parameters:
+        - $ref: '#/components/parameters/PokemonId'
+      responses:
+        '200':
+          description: Le pokemon correspondant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pokemon'
+              example:
+                id: 25
+                name:
+                  english: Pikachu
+                  japanese: ピカチュウ
+                  chinese: 皮卡丘
+                  french: Pikachu
+                type:
+                  - Electric
+                base:
+                  HP: 35
+                  Attack: 55
+                  Defense: 40
+                  Sp. Attack: 50
+                  Sp. Defense: 50
+                  Speed: 90
+        '404':
+          description: 'Aucun pokemon ne porte cet id (ex. 999999)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: 'Pokemon non trouvé (id: 999999)'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /pokemons/{name}:
+    get:
+      tags:
+        - Pokemons
+      summary: Lire un pokemon par son nom
+      description: |
+        Renvoie UN pokemon à partir de son nom, **sans tenir compte de la casse**.
+        Le nom peut être anglais, français, japonais ou chinois
+        (dans `pokedex.json`, `name` est un objet `{ english, japanese, chinese, french }`).
+        Si non trouvé, renvoie **404**.
+
+        Cette route correspond au chemin réel du serveur `/api/v1/pokemons/:idOrName` :
+        si la valeur saisie n'est pas un nombre, c'est `findOneByName` qui est appelé.
+      operationId: findOneByName
+      parameters:
+        - $ref: '#/components/parameters/PokemonName'
+      responses:
+        '200':
+          description: Le pokemon correspondant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pokemon'
+        '404':
+          description: 'Aucun pokemon ne porte ce nom (ex. zzzz)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: 'Pokemon non trouvé (name: zzzz)'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /images/{filename}:
+    get:
+      tags:
+        - Fichiers statiques
+      summary: Servir une image
+      description: |
+        Sert un fichier du dossier `FILES/images` (route statique `express.static`).
+        Les fichiers sont nommés avec l'id sur 3 chiffres : `/images/001.png`.
+      operationId: serveImage
+      parameters:
+        - $ref: '#/components/parameters/StaticFilename'
+      responses:
+        '200':
+          description: Le fichier image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Fichier introuvable
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /sprites/{filename}:
+    get:
+      tags:
+        - Fichiers statiques
+      summary: Servir un sprite
+      description: |
+        Sert un fichier du dossier `FILES/sprites` (fourni vide sur le NAS).
+        Même convention de nommage : `/sprites/001.png`.
+      operationId: serveSprite
+      parameters:
+        - $ref: '#/components/parameters/StaticFilename'
+      responses:
+        '200':
+          description: Le fichier sprite
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Fichier introuvable
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /thumbnails/{filename}:
+    get:
+      tags:
+        - Fichiers statiques
+      summary: Servir une vignette
+      description: |
+        Sert un fichier du dossier `FILES/thumbnails` (route statique `express.static`).
+        Même convention de nommage : `/thumbnails/001.png`.
+      operationId: serveThumbnail
+      parameters:
+        - $ref: '#/components/parameters/StaticFilename'
+      responses:
+        '200':
+          description: La vignette
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Fichier introuvable
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /:
+    get:
+      tags:
+        - Divers
+      summary: Aide au débogage
+      description: |
+        Renvoie un message rappelant les routes disponibles.
+        Sur le serveur v2 (port 5002), les paramètres de limitation sont ajoutés.
+      operationId: getHelp
+      responses:
+        '200':
+          description: Message d'aide
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Help'
+              example:
+                message: 'Serveur Pokedex, utilisez les routes: /api/v1/pokemons, /api/v1/pokemons/random, /api/v1/pokemons/{id}, /api/v1/pokemons/{name}'
+
+components:
+
+  parameters:
+    PokemonId:
+      name: id
+      in: path
+      required: true
+      description: Identifiant numérique du pokemon (de 1 à 809)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 809
+      example: 25
+    PokemonName:
+      name: name
+      in: path
+      required: true
+      description: Nom du pokemon en anglais, français, japonais ou chinois (insensible à la casse)
+      schema:
+        type: string
+      example: pikachu
+    StaticFilename:
+      name: filename
+      in: path
+      required: true
+      description: Nom du fichier, id sur 3 chiffres + extension
+      schema:
+        type: string
+      example: 001.png
+
+  headers:
+    RateLimitLimit:
+      description: Nombre maximum de requêtes autorisées (10 par IP et par minute)
+      schema:
+        type: integer
+        example: 10
+    RateLimitRemaining:
+      description: Nombre de requêtes restantes dans la fenêtre glissante
+      schema:
+        type: integer
+        example: 7
+    RateLimitReset:
+      description: Moment de réinitialisation du compteur (timestamp epoch en secondes)
+      schema:
+        type: integer
+        example: 1793600000
+    RetryAfter:
+      description: Nombre de secondes à attendre avant de réessayer (uniquement en 429)
+      schema:
+        type: integer
+        example: 42
+
+  responses:
+    TooManyRequests:
+      description: |
+        **Limite de requêtes atteinte** (serveur v2, port 5002 uniquement) :
+        10 requêtes maximum par IP toutes les 60 000 ms.
+        La réponse porte aussi les en-têtes `RateLimit-Limit`, `RateLimit-Remaining`,
+        `RateLimit-Reset` et `Retry-After`.
+      headers:
+        RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Too many requests. Please try again later.
+
+  schemas:
+    PokemonName:
+      type: object
+      description: Nom du pokemon dans les quatre langues disponibles
+      required:
+        - english
+        - japanese
+        - chinese
+        - french
+      properties:
+        english:
+          type: string
+          example: Bulbasaur
+        japanese:
+          type: string
+          example: フシギダネ
+        chinese:
+          type: string
+          example: 妙蛙种子
+        french:
+          type: string
+          example: Bulbizarre
+
+    PokemonStats:
+      type: object
+      description: Statistiques de base du pokemon
+      required:
+        - HP
+        - Attack
+        - Defense
+        - Sp. Attack
+        - Sp. Defense
+        - Speed
+      properties:
+        HP:
+          type: integer
+          example: 45
+        Attack:
+          type: integer
+          example: 49
+        Defense:
+          type: integer
+          example: 49
+        Sp. Attack:
+          type: integer
+          example: 65
+        Sp. Defense:
+          type: integer
+          example: 65
+        Speed:
+          type: integer
+          example: 45
+
+    Pokemon:
+      type: object
+      description: Un pokemon du pokedex (structure d'une entrée de DATA/pokedex.json)
+      required:
+        - id
+        - name
+        - type
+        - base
+      properties:
+        id:
+          type: integer
+          minimum: 1
+          maximum: 809
+          description: Identifiant unique du pokemon
+          example: 1
+        name:
+          $ref: '#/components/schemas/PokemonName'
+        type:
+          type: array
+          description: Types du pokemon (18 types possibles)
+          items:
+            type: string
+            enum:
+              - Bug
+              - Dark
+              - Dragon
+              - Electric
+              - Fairy
+              - Fighting
+              - Fire
+              - Flying
+              - Ghost
+              - Grass
+              - Ground
+              - Ice
+              - Normal
+              - Poison
+              - Psychic
+              - Rock
+              - Steel
+              - Water
+          example:
+            - Grass
+            - Poison
+        base:
+          $ref: '#/components/schemas/PokemonStats'
+
+    Error:
+      type: object
+      description: Message d'erreur renvoyé par l'API
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          example: 'Pokemon non trouvé (id: 999999)'
+
+    Help:
+      type: object
+      description: Message d'aide renvoyé par la route /
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          example: 'Serveur Pokedex, utilisez les routes: /api/v1/pokemons, ...'
+        rateLimit:
+          type: object
+          description: Paramètres de limitation (serveur v2, port 5002 uniquement)
+          properties:
+            max:
+              type: integer
+              example: 10
+            windowMs:
+              type: integer
+              example: 60000
